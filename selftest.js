@@ -51,7 +51,8 @@ function run() {
   assert.equal(request.rewritten.messages[2].role, "user");
   assert.match(request.rewritten.messages[2].content, /Protocol requirements for your next reply/);
   assert.match(request.rewritten.messages[2].content, /Do not use \[question\], \[write\], \[read\]/);
-  assert.match(request.rewritten.messages[2].content, /first assistant turn/i);
+  assert.match(request.rewritten.messages[2].content, /concrete task/);
+  assert.match(request.rewritten.messages[2].content, /generic greeting or conversation opener/);
 
   const requestWithToolResult = transformRequestForBridge({
     model: "zai-org/glm-5:thinking",
@@ -176,6 +177,12 @@ function run() {
   assert.equal(parsedBracketNamedTool.kind, "tool_calls");
   assert.equal(parsedBracketNamedTool.toolCalls[0].function.name, "question");
   assert.match(parsedBracketNamedTool.toolCalls[0].function.arguments, /What do you want\?/);
+
+  const parsedBracketNamedToolWithLeadingJunk = parseBridgeAssistantText(
+    ']\n[question]\n{"questions":[{"question":"What do you want?","header":"Type","options":[{"label":"A","description":"desc"}]}]}'
+  );
+  assert.equal(parsedBracketNamedToolWithLeadingJunk.kind, "tool_calls");
+  assert.equal(parsedBracketNamedToolWithLeadingJunk.toolCalls[0].function.name, "question");
 
   const parsedCanonicalEnvelopeInsideProse = parseBridgeAssistantText(
     "I will do it now.\n[[OPENCODE_TOOL]]\n{\"tool_calls\":[{\"name\":\"read\",\"arguments\":{\"filePath\":\"c.txt\"}}]}\n[[/OPENCODE_TOOL]]\nThanks."

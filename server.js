@@ -490,7 +490,7 @@ function encodeUserMessageForBridge(content, options = {}) {
     "- Do not use [question], [write], [read], or any other bracketed legacy tool format.",
     "- Do not narrate what you are about to do in plain text.",
     firstTurn
-      ? "- On the first assistant turn, prefer an immediate tool call over explanation."
+      ? "- On the first assistant turn, if the user already gave a concrete task, prefer acting on it directly rather than replying with a generic greeting or conversation opener."
       : "- Continue with the next concrete action, not a narration step."
   ].join("\n");
 }
@@ -1063,7 +1063,7 @@ function extractCompletedToolCallObjectTexts(text) {
 }
 
 function extractBracketNamedToolBlock(text) {
-  const source = String(text || "");
+  const source = String(text || "").replace(/^\s*[\]\}\),;:]+\s*/, "");
   const match = source.match(/^\s*\[([A-Za-z_][A-Za-z0-9_-]*)\]\s*/);
   if (!match) return null;
   const toolName = match[1];
