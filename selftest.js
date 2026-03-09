@@ -2,6 +2,7 @@
 
 const assert = require("node:assert/strict");
 const {
+  buildBridgeResultFromText,
   buildChatCompletionFromBridge,
   buildSSEFromBridge,
   parseBridgeAssistantText,
@@ -122,6 +123,13 @@ function run() {
   assert.equal(parsedSingleBracketToolMarker.toolCalls[0].function.name, "write");
   assert.match(parsedSingleBracketToolMarker.toolCalls[0].function.arguments, /a.txt/);
 
+  const parsedLoosePluralToolMarker = parseBridgeAssistantText(
+    "[ OPENCODE_TOOLS ]\n\"tool_calls\": {\"name\":\"write\",\"arguments\":{\"filePath\":\"b.txt\",\"content\":\"y\"}}\n[/OPENCODE_TOOL]"
+  );
+  assert.equal(parsedLoosePluralToolMarker.kind, "tool_calls");
+  assert.equal(parsedLoosePluralToolMarker.toolCalls[0].function.name, "write");
+  assert.match(parsedLoosePluralToolMarker.toolCalls[0].function.arguments, /b.txt/);
+
   const parsedFinalMarker = parseBridgeAssistantText(
     "[[OPENCODE_FINAL]]\nDone.\n[[/OPENCODE_FINAL]]"
   );
@@ -133,6 +141,12 @@ function run() {
   );
   assert.equal(parsedSingleBracketFinalMarker.kind, "final");
   assert.equal(parsedSingleBracketFinalMarker.content, "Done.");
+
+  const parsedLooseFinalMarker = parseBridgeAssistantText(
+    "[ OPENCODE_FINAL ]\nDone.\n[/OPENCODE_FINAL]"
+  );
+  assert.equal(parsedLooseFinalMarker.kind, "final");
+  assert.equal(parsedLooseFinalMarker.content, "Done.");
 
   const parsedCanonicalEnvelopeInsideProse = parseBridgeAssistantText(
     "I will do it now.\n[[OPENCODE_TOOL]]\n{\"tool_calls\":[{\"name\":\"read\",\"arguments\":{\"filePath\":\"c.txt\"}}]}\n[[/OPENCODE_TOOL]]\nThanks."
@@ -176,6 +190,22 @@ function run() {
   assert.equal(completion.choices[0].finish_reason, "tool_calls");
   assert.equal(completion.choices[0].message.content, "");
   assert.equal(completion.choices[0].message.tool_calls[0].function.name, "write");
+
+  const ignoresReasoningMarkers = buildBridgeResultFromText(
+    "Normal final text.",
+    "[[OPENCODE_TOOL]]\n{\"tool_calls\":[{\"name\":\"write\",\"arguments\":{\"filePath\":\"ignore.txt\",\"content\":\"x\"}}]}\n[[/OPENCODE_TOOL]]"
+  );
+  assert.equal(ignoresReasoningMarkers.kind, "final");
+  assert.equal(ignoresReasoningMarkers.finishReason, "stop");
+  assert.equal(ignoresReasoningMarkers.message.content, "Normal final text.");
+
+  const stillUsesContentMarkers = buildBridgeResultFromText(
+    "[[OPENCODE_TOOL]]\n{\"tool_calls\":[{\"name\":\"write\",\"arguments\":{\"filePath\":\"real.txt\",\"content\":\"x\"}}]}\n[[/OPENCODE_TOOL]]",
+    "I should use [[OPENCODE_TOOL]] in content."
+  );
+  assert.equal(stillUsesContentMarkers.kind, "tool_calls");
+  assert.equal(stillUsesContentMarkers.finishReason, "tool_calls");
+  assert.equal(stillUsesContentMarkers.message.tool_calls[0].function.name, "write");
 
   const sse = buildSSEFromBridge(transcript);
   assert.match(sse, /"finish_reason":"tool_calls"/);
