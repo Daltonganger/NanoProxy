@@ -100,7 +100,9 @@ Tool use:
 
 ```text
 [[OPENCODE_TOOL]]
-{"tool_calls":[{"name":"write","arguments":{"filePath":"a.txt","content":"hello"}}]}
+[[CALL]]
+{"name":"write","arguments":{"filePath":"a.txt","content":"hello"}}
+[[/CALL]]
 [[/OPENCODE_TOOL]]
 ```
 
@@ -108,10 +110,12 @@ Multiple tool calls in one turn are also allowed when they are independent:
 
 ```text
 [[OPENCODE_TOOL]]
-{"tool_calls":[
-  {"name":"read","arguments":{"filePath":"src/app.js"}},
-  {"name":"read","arguments":{"filePath":"src/styles.css"}}
-]}
+[[CALL]]
+{"name":"read","arguments":{"filePath":"src/app.js"}}
+[[/CALL]]
+[[CALL]]
+{"name":"read","arguments":{"filePath":"src/styles.css"}}
+[[/CALL]]
 [[/OPENCODE_TOOL]]
 ```
 
@@ -124,6 +128,7 @@ done
 ```
 
 6. The proxy parses that envelope and converts it into OpenAI-style `tool_calls` for OpenCode.
+7. The older `{"tool_calls":[...]}` JSON shape is still accepted for compatibility, but explicit `[[CALL]]` blocks are preferred.
 
 ## Notes
 

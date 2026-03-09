@@ -5,6 +5,7 @@ const {
   buildBridgeResultFromText,
   buildChatCompletionFromBridge,
   buildSSEFromBridge,
+  extractProgressiveToolCalls,
   parseBridgeAssistantText,
   parseSSETranscript,
   transformRequestForBridge
@@ -39,6 +40,8 @@ function run() {
   assert.equal(request.rewritten.messages[1].role, "system");
   assert.match(request.rewritten.messages[1].content, /\[\[OPENCODE_TOOL\]\]/);
   assert.match(request.rewritten.messages[1].content, /\[\[\/OPENCODE_TOOL\]\]/);
+  assert.match(request.rewritten.messages[1].content, /\[\[CALL\]\]/);
+  assert.match(request.rewritten.messages[1].content, /\[\[\/CALL\]\]/);
   assert.match(request.rewritten.messages[1].content, /Invalid response example/);
   assert.equal(request.rewritten.temperature, 0.2);
   assert.equal(request.rewritten.top_p, 0.3);
@@ -116,6 +119,19 @@ function run() {
   );
   assert.equal(parsedToolMarker.kind, "tool_calls");
   assert.equal(parsedToolMarker.toolCalls[0].function.name, "write");
+
+  const parsedCallMarker = parseBridgeAssistantText(
+    "[[OPENCODE_TOOL]]\n[[CALL]]\n{\"name\":\"write\",\"arguments\":{\"filePath\":\"a.txt\",\"content\":\"z\"}}\n[[/CALL]]\n[[/OPENCODE_TOOL]]"
+  );
+  assert.equal(parsedCallMarker.kind, "tool_calls");
+  assert.equal(parsedCallMarker.toolCalls[0].function.name, "write");
+
+  const parsedMultiCallMarker = parseBridgeAssistantText(
+    "[[OPENCODE_TOOL]]\n[[CALL]]\n{\"name\":\"read\",\"arguments\":{\"filePath\":\"a.txt\"}}\n[[/CALL]]\n[[CALL]]\n{\"name\":\"read\",\"arguments\":{\"filePath\":\"b.txt\"}}\n[[/CALL]]\n[[/OPENCODE_TOOL]]"
+  );
+  assert.equal(parsedMultiCallMarker.kind, "tool_calls");
+  assert.equal(parsedMultiCallMarker.toolCalls.length, 2);
+  assert.equal(parsedMultiCallMarker.toolCalls[1].function.name, "read");
 
   const parsedSingleBracketToolMarker = parseBridgeAssistantText(
     "[OPENCODE_TOOL]\n{\"tool_calls\":{\"name\":\"write\",\"arguments\":{\"filePath\":\"a.txt\",\"content\":\"z\"}}}\n[/OPENCODE_TOOL]"
@@ -204,6 +220,30 @@ function run() {
   assert.equal(multiToolCompletion.choices[0].message.tool_calls.length, 2);
   assert.equal(multiToolCompletion.choices[0].message.tool_calls[0].function.name, "read");
   assert.equal(multiToolCompletion.choices[0].message.tool_calls[1].function.name, "read");
+
+  const progressiveOne = extractProgressiveToolCalls(
+    '[[OPENCODE_TOOL]]\n{"tool_calls":[{"name":"read","arguments":{"filePath":"a.txt"}}'
+  );
+  assert.equal(progressiveOne.length, 1);
+  assert.equal(progressiveOne[0].function.name, "read");
+
+  const progressiveTwo = extractProgressiveToolCalls(
+    '[[OPENCODE_TOOL]]\n{"tool_calls":[{"name":"read","arguments":{"filePath":"a.txt"}},{"name":"read","arguments":{"filePath":"b.txt"}}'
+  );
+  assert.equal(progressiveTwo.length, 2);
+  assert.equal(progressiveTwo[1].function.name, "read");
+
+  const progressiveCallMarkers = extractProgressiveToolCalls(
+    '[[OPENCODE_TOOL]]\n[[CALL]]\n{"name":"read","arguments":{"filePath":"a.txt"}}\n[[/CALL]]\n[[CALL]]\n{"name":"read","arguments":{"filePath":"b.txt"}}'
+  );
+  assert.equal(progressiveCallMarkers.length, 1);
+  assert.equal(progressiveCallMarkers[0].function.name, "read");
+
+  const progressiveClosedCallMarkers = extractProgressiveToolCalls(
+    '[[OPENCODE_TOOL]]\n[[CALL]]\n{"name":"read","arguments":{"filePath":"a.txt"}}\n[[/CALL]]\n[[CALL]]\n{"name":"read","arguments":{"filePath":"b.txt"}}\n[[/CALL]]'
+  );
+  assert.equal(progressiveClosedCallMarkers.length, 2);
+  assert.equal(progressiveClosedCallMarkers[1].function.name, "read");
 
   const ignoresReasoningMarkers = buildBridgeResultFromText(
     "Normal final text.",

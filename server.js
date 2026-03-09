@@ -21,6 +21,10 @@ const TOOL_MODE_MARKER = "[[OPENCODE_TOOL]]";
 const FINAL_MODE_MARKER = "[[OPENCODE_FINAL]]";
 const TOOL_MODE_END_MARKER = "[[/OPENCODE_TOOL]]";
 const FINAL_MODE_END_MARKER = "[[/OPENCODE_FINAL]]";
+const CALL_MODE_MARKER = "[[CALL]]";
+const CALL_MODE_END_MARKER = "[[/CALL]]";
+const CALL_MODE_MARKER_ALIASES = ["[CALL]", CALL_MODE_MARKER];
+const CALL_MODE_END_MARKER_ALIASES = ["[/CALL]", CALL_MODE_END_MARKER];
 const TOOL_MODE_MARKER_ALIASES = ["[OPENCODE_TOOL]", TOOL_MODE_MARKER];
 const FINAL_MODE_MARKER_ALIASES = ["[OPENCODE_FINAL]", FINAL_MODE_MARKER];
 const TOOL_MODE_END_MARKER_ALIASES = ["[/OPENCODE_TOOL]", TOOL_MODE_END_MARKER];
@@ -29,6 +33,8 @@ const LOOSE_TOOL_START_REGEX = /\[{1,2}\s*OPENCODE_TOOLS?\s*\]{1,2}/i;
 const LOOSE_TOOL_END_REGEX = /\[{1,2}\s*\/\s*OPENCODE_TOOLS?\s*\]{1,2}/i;
 const LOOSE_FINAL_START_REGEX = /\[{1,2}\s*OPENCODE_FINAL\s*\]{1,2}/i;
 const LOOSE_FINAL_END_REGEX = /\[{1,2}\s*\/\s*OPENCODE_FINAL\s*\]{1,2}/i;
+const LOOSE_CALL_START_REGEX = /\[{1,2}\s*CALL\s*\]{1,2}/i;
+const LOOSE_CALL_END_REGEX = /\[{1,2}\s*\/\s*CALL\s*\]{1,2}/i;
 
 function buildUpstreamUrl(requestPath) {
   const base = UPSTREAM_BASE_URL.replace(/\/+$/, "");
@@ -429,17 +435,22 @@ function compactSchema(schema, depth = 0) {
 }
 
 function encodeToolCallsBlock(toolCalls) {
-  const payload = {
-    tool_calls: toolCalls.map((call) => ({
+  const callBlocks = toolCalls.map((call) => {
+    const payload = {
       name: call.function.name,
       arguments: typeof call.function.arguments === "string"
         ? (tryParseJson(call.function.arguments).ok ? tryParseJson(call.function.arguments).value : call.function.arguments)
         : (call.function.arguments || {})
-    }))
-  };
+    };
+    return [
+      CALL_MODE_MARKER,
+      JSON.stringify(payload, null, 2),
+      CALL_MODE_END_MARKER
+    ].join("\n");
+  });
   return [
     TOOL_MODE_MARKER,
-    JSON.stringify(payload, null, 2),
+    ...callBlocks,
     TOOL_MODE_END_MARKER
   ].join("\n");
 }
@@ -493,34 +504,40 @@ function buildBridgeSystemMessage(tools) {
     "When you want to use a tool, do not answer in normal prose.",
     `For tool use, reply in this exact envelope and nothing else:`,
     TOOL_MODE_MARKER,
-    JSON.stringify({ tool_calls: [{ name: "tool_name", arguments: { example: true } }] }, null, 2),
+    CALL_MODE_MARKER,
+    JSON.stringify({ name: "tool_name", arguments: { example: true } }, null, 2),
+    CALL_MODE_END_MARKER,
     TOOL_MODE_END_MARKER,
-    "Inside the tool envelope, output valid JSON with this shape:",
-    JSON.stringify({ tool_calls: [{ name: "tool_name", arguments: { example: true } }] }, null, 2),
+    "Inside the tool envelope, emit one or more CALL blocks. Each CALL block contains one tool call as JSON.",
     "Rules for tool use:",
     `- Output ${TOOL_MODE_MARKER} first and ${TOOL_MODE_END_MARKER} last.`,
+    `- For each tool call, wrap it in ${CALL_MODE_MARKER} and ${CALL_MODE_END_MARKER}.`,
     "- Do not use markdown code fences for tool replies.",
     "- Do not write any explanatory prose before, inside, or after the tool envelope.",
     "- Emit one or more tool calls only when they are independent and can be executed in parallel or as a batch.",
-    "- If several reads/searches are needed immediately, include them together in tool_calls.",
+    "- If several reads/searches are needed immediately, include multiple CALL blocks in the same tool envelope.",
     "- If sequencing matters, emit only the next required tool call.",
-    "- After each tool result, decide the next tool call or tool_calls batch.",
+    "- After each tool result, decide the next tool call or CALL batch.",
     "- On the first assistant turn for a coding task, usually call a search/read/list tool first.",
     "- Use tool names exactly as listed.",
     "- arguments must be a valid JSON object.",
-    "- tool_calls must contain at least one item.",
+    "- The old tool_calls array JSON shape is still accepted, but CALL blocks are preferred.",
     "Invalid response example:",
     "I will inspect the codebase first.",
     "Valid response example:",
     TOOL_MODE_MARKER,
-    JSON.stringify({ tool_calls: [{ name: "read", arguments: { filePath: "src/app.js" } }] }, null, 2),
+    CALL_MODE_MARKER,
+    JSON.stringify({ name: "read", arguments: { filePath: "src/app.js" } }, null, 2),
+    CALL_MODE_END_MARKER,
     TOOL_MODE_END_MARKER,
     "Valid multi-tool example:",
     TOOL_MODE_MARKER,
-    JSON.stringify({ tool_calls: [
-      { name: "read", arguments: { filePath: "src/app.js" } },
-      { name: "read", arguments: { filePath: "src/styles.css" } }
-    ] }, null, 2),
+    CALL_MODE_MARKER,
+    JSON.stringify({ name: "read", arguments: { filePath: "src/app.js" } }, null, 2),
+    CALL_MODE_END_MARKER,
+    CALL_MODE_MARKER,
+    JSON.stringify({ name: "read", arguments: { filePath: "src/styles.css" } }, null, 2),
+    CALL_MODE_END_MARKER,
     TOOL_MODE_END_MARKER,
     `If you are giving a final answer to the user and no tool is needed, use this exact envelope:`,
     FINAL_MODE_MARKER,
@@ -905,9 +922,172 @@ function extractLooseMarkerEnvelope(text, startRegex, endRegex) {
   return afterStart.slice(0, endMatch.index).trim();
 }
 
+function findMarkerStart(text, markers, looseRegex) {
+  const source = String(text || "");
+  let best = null;
+
+  for (const marker of markers) {
+    const index = source.indexOf(marker);
+    if (index !== -1 && (!best || index < best.index)) {
+      best = { index, length: marker.length };
+    }
+  }
+
+  const looseMatch = looseRegex.exec(source);
+  if (looseMatch && (!best || looseMatch.index < best.index)) {
+    best = { index: looseMatch.index, length: looseMatch[0].length };
+  }
+
+  return best;
+}
+
+function findMarkerEnd(text, markers, looseRegex) {
+  const source = String(text || "");
+  let best = null;
+
+  for (const marker of markers) {
+    const index = source.indexOf(marker);
+    if (index !== -1 && (!best || index < best.index)) {
+      best = { index, length: marker.length };
+    }
+  }
+
+  const looseMatch = looseRegex.exec(source);
+  if (looseMatch && (!best || looseMatch.index < best.index)) {
+    best = { index: looseMatch.index, length: looseMatch[0].length };
+  }
+
+  return best;
+}
+
+function extractPartialToolEnvelope(text) {
+  const source = String(text || "");
+  const start = findMarkerStart(source, TOOL_MODE_MARKER_ALIASES, LOOSE_TOOL_START_REGEX);
+  if (!start) return null;
+  const afterStart = source.slice(start.index + start.length);
+  const end = findMarkerEnd(afterStart, TOOL_MODE_END_MARKER_ALIASES, LOOSE_TOOL_END_REGEX);
+  return end ? afterStart.slice(0, end.index).trim() : afterStart.trim();
+}
+
+function extractCallEnvelopes(text, allowPartial = false) {
+  const source = String(text || "");
+  const out = [];
+  let cursor = 0;
+
+  while (cursor < source.length) {
+    const next = findMarkerStart(source.slice(cursor), CALL_MODE_MARKER_ALIASES, LOOSE_CALL_START_REGEX);
+    if (!next) break;
+    const startIndex = cursor + next.index;
+    const afterStartIndex = startIndex + next.length;
+    const afterStart = source.slice(afterStartIndex);
+    const end = findMarkerEnd(afterStart, CALL_MODE_END_MARKER_ALIASES, LOOSE_CALL_END_REGEX);
+    if (!end) {
+      if (allowPartial) out.push(afterStart.trim());
+      break;
+    }
+    out.push(afterStart.slice(0, end.index).trim());
+    cursor = afterStartIndex + end.index + end.length;
+  }
+
+  return out;
+}
+
+function extractCompletedToolCallObjectTexts(text) {
+  const source = String(text || "");
+  const toolCallsMatch = /"tool_calls"\s*:\s*/.exec(source);
+  if (!toolCallsMatch) return [];
+
+  const arrayStart = source.indexOf("[", toolCallsMatch.index + toolCallsMatch[0].length);
+  if (arrayStart === -1) return [];
+
+  const out = [];
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  let objectStart = -1;
+  let arrayDepth = 0;
+
+  for (let i = arrayStart; i < source.length; i++) {
+    const char = source[i];
+
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === "\"") inString = false;
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = true;
+      continue;
+    }
+
+    if (char === "[") {
+      arrayDepth++;
+      continue;
+    }
+
+    if (char === "]") {
+      arrayDepth--;
+      if (arrayDepth <= 0) break;
+      continue;
+    }
+
+    if (arrayDepth !== 1) continue;
+
+    if (char === "{") {
+      if (depth === 0) objectStart = i;
+      depth++;
+      continue;
+    }
+
+    if (char === "}") {
+      depth--;
+      if (depth === 0 && objectStart !== -1) {
+        out.push(source.slice(objectStart, i + 1));
+        objectStart = -1;
+      }
+    }
+  }
+
+  return out;
+}
+
+function extractProgressiveToolCalls(text) {
+  const payload = extractPartialToolEnvelope(text);
+  if (!payload) return [];
+
+  const callEnvelopes = extractCallEnvelopes(payload, false);
+  if (callEnvelopes.length > 0) {
+    const recovered = [];
+    for (const envelope of callEnvelopes) {
+      const toolCalls = bestEffortParseToolPayload(envelope);
+      if (toolCalls && toolCalls.length > 0) recovered.push(...toolCalls);
+    }
+    if (recovered.length > 0) return recovered;
+  }
+
+  const objectTexts = extractCompletedToolCallObjectTexts(payload);
+  const recovered = [];
+  for (const objectText of objectTexts) {
+    const toolCalls = bestEffortParseToolPayload(objectText);
+    if (toolCalls && toolCalls.length > 0) recovered.push(...toolCalls);
+  }
+  return recovered;
+}
+
 function parseBridgeAssistantText(text) {
   const canonicalTool = extractAnyMarkerEnvelope(text, TOOL_MODE_MARKER_ALIASES, TOOL_MODE_END_MARKER_ALIASES);
   if (canonicalTool !== null) {
+    const callEnvelopes = extractCallEnvelopes(canonicalTool);
+    if (callEnvelopes.length > 0) {
+      const recovered = [];
+      for (const envelope of callEnvelopes) {
+        const toolCalls = bestEffortParseToolPayload(envelope);
+        if (toolCalls && toolCalls.length > 0) recovered.push(...toolCalls);
+      }
+      if (recovered.length > 0) return { kind: "tool_calls", toolCalls: recovered };
+    }
     const toolCalls = bestEffortParseToolPayload(canonicalTool);
     if (toolCalls && toolCalls.length > 0) return { kind: "tool_calls", toolCalls };
     return { kind: "invalid_tool_block", raw: text };
@@ -915,6 +1095,15 @@ function parseBridgeAssistantText(text) {
 
   const looseTool = extractLooseMarkerEnvelope(text, LOOSE_TOOL_START_REGEX, LOOSE_TOOL_END_REGEX);
   if (looseTool !== null) {
+    const callEnvelopes = extractCallEnvelopes(looseTool);
+    if (callEnvelopes.length > 0) {
+      const recovered = [];
+      for (const envelope of callEnvelopes) {
+        const toolCalls = bestEffortParseToolPayload(envelope);
+        if (toolCalls && toolCalls.length > 0) recovered.push(...toolCalls);
+      }
+      if (recovered.length > 0) return { kind: "tool_calls", toolCalls: recovered };
+    }
     const toolCalls = bestEffortParseToolPayload(looseTool);
     if (toolCalls && toolCalls.length > 0) return { kind: "tool_calls", toolCalls };
     return { kind: "invalid_tool_block", raw: text };
@@ -1302,6 +1491,7 @@ async function proxyRequest(req, res) {
     let rawBuffer = "";
     let roleSent = false;
     let reasoningSent = 0;
+    let emittedToolCalls = 0;
 
     const ensureRole = (aggregate) => {
       if (roleSent) return;
@@ -1327,6 +1517,37 @@ async function proxyRequest(req, res) {
         model: aggregate.model || "tool-bridge",
         choices: [{ index: 0, delta: { reasoning: deltaText }, finish_reason: null }]
       }));
+    };
+
+    const flushProgressiveToolCalls = (aggregate) => {
+      const progressiveCalls = extractProgressiveToolCalls(aggregate.content);
+      if (progressiveCalls.length <= emittedToolCalls) return;
+      ensureRole(aggregate);
+      for (let i = emittedToolCalls; i < progressiveCalls.length; i++) {
+        const call = progressiveCalls[i];
+        res.write(sseLine({
+          id: aggregate.id || `chatcmpl_${randomUUID()}`,
+          object: "chat.completion.chunk",
+          created: aggregate.created || Math.floor(Date.now() / 1000),
+          model: aggregate.model || "tool-bridge",
+          choices: [{
+            index: 0,
+            delta: {
+              tool_calls: [{
+                index: i,
+                id: call.id,
+                type: "function",
+                function: {
+                  name: call.function.name,
+                  arguments: call.function.arguments
+                }
+              }]
+            },
+            finish_reason: null
+          }]
+        }));
+      }
+      emittedToolCalls = progressiveCalls.length;
     };
 
     const aggregate = {
@@ -1360,6 +1581,7 @@ async function proxyRequest(req, res) {
 
         applyChunkToAggregate(aggregate, parsed.value);
         flushReasoningDelta(aggregate);
+        flushProgressiveToolCalls(aggregate);
       }
     }
 
@@ -1391,6 +1613,7 @@ async function proxyRequest(req, res) {
     }
 
     for (const [index, call] of result.message.tool_calls.entries()) {
+      if (index < emittedToolCalls) continue;
       res.write(sseLine({
         id: aggregate.id || `chatcmpl_${randomUUID()}`,
         object: "chat.completion.chunk",
@@ -1539,6 +1762,7 @@ module.exports = {
   buildBridgeResultFromText,
   buildChatCompletionFromBridge,
   buildSSEFromBridge,
+  extractProgressiveToolCalls,
   parseBridgeAssistantText,
   parseSSETranscript,
   transformRequestForBridge,
