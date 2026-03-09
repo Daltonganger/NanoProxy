@@ -247,6 +247,12 @@ function run() {
   assert.equal(parsedLooseFinalMarker.kind, "final");
   assert.equal(parsedLooseFinalMarker.content, "Done.");
 
+  const parsedFinalWithLeadingJunk = parseBridgeAssistantText(
+    "[[OPENCODE_FINAL]]\n]\nHello\n[[/OPENCODE_FINAL]]"
+  );
+  assert.equal(parsedFinalWithLeadingJunk.kind, "final");
+  assert.equal(parsedFinalWithLeadingJunk.content, "Hello");
+
   const parsedBracketNamedTool = parseBridgeAssistantText(
     '[question]\n{"questions":[{"question":"What do you want?","header":"Type","options":[{"label":"A","description":"desc"}]}]}'
   );

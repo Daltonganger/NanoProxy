@@ -947,6 +947,10 @@ function stripAnyMarker(text, markers) {
   return source;
 }
 
+function stripLeadingMarkerJunk(text) {
+  return String(text || "").replace(/^\s*[\]\}\),;:]+\s*/, "");
+}
+
 function extractAnyMarkerEnvelope(text, startMarkers, endMarkers) {
   const source = String(text || "");
   for (const startMarker of startMarkers) {
@@ -1178,12 +1182,12 @@ function parseBridgeAssistantText(text) {
 
   const canonicalFinal = extractAnyMarkerEnvelope(text, FINAL_MODE_MARKER_ALIASES, FINAL_MODE_END_MARKER_ALIASES);
   if (canonicalFinal !== null) {
-    return { kind: "final", content: canonicalFinal };
+    return { kind: "final", content: stripLeadingMarkerJunk(canonicalFinal) };
   }
 
   const looseFinal = extractLooseMarkerEnvelope(text, LOOSE_FINAL_START_REGEX, LOOSE_FINAL_END_REGEX);
   if (looseFinal !== null) {
-    return { kind: "final", content: looseFinal };
+    return { kind: "final", content: stripLeadingMarkerJunk(looseFinal) };
   }
 
   if (startsWithAnyMarker(text, TOOL_MODE_MARKER_ALIASES)) {
@@ -1191,7 +1195,7 @@ function parseBridgeAssistantText(text) {
   }
 
   if (startsWithAnyMarker(text, FINAL_MODE_MARKER_ALIASES)) {
-    return { kind: "final", content: stripAnyMarker(text, FINAL_MODE_MARKER_ALIASES) };
+    return { kind: "final", content: stripLeadingMarkerJunk(stripAnyMarker(text, FINAL_MODE_MARKER_ALIASES)) };
   }
 
   const toolBlock = extractFencedBlock(text, TOOL_BLOCK_LABEL);
@@ -1204,9 +1208,9 @@ function parseBridgeAssistantText(text) {
   if (finalBlock) {
     const parsed = tryParseJsonLenient(finalBlock);
     if (parsed.ok && parsed.value && typeof parsed.value === "object" && typeof parsed.value.content === "string") {
-      return { kind: "final", content: parsed.value.content };
+      return { kind: "final", content: stripLeadingMarkerJunk(parsed.value.content) };
     }
-    return { kind: "final", content: finalBlock };
+    return { kind: "final", content: stripLeadingMarkerJunk(finalBlock) };
   }
 
   const fencedJson = parseAnyFencedJsonPayload(text);
