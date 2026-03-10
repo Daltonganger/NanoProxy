@@ -23,6 +23,7 @@ const TOOL_MODE_END_MARKER = "[[/OPENCODE_TOOL]]";
 const FINAL_MODE_END_MARKER = "[[/OPENCODE_FINAL]]";
 const CALL_MODE_MARKER = "[[CALL]]";
 const CALL_MODE_END_MARKER = "[[/CALL]]";
+const MAX_PARALLEL_TOOL_CALLS = 5;
 const CALL_MODE_MARKER_ALIASES = ["[CALL]", CALL_MODE_MARKER];
 const CALL_MODE_END_MARKER_ALIASES = ["[/CALL]", CALL_MODE_END_MARKER];
 const TOOL_MODE_MARKER_ALIASES = ["[OPENCODE_TOOL]", TOOL_MODE_MARKER];
@@ -517,7 +518,7 @@ function encodeToolResultBlock(message, flavor = "default") {
     : `{"name":"read","arguments":{"filePath":"src/app.js"}}`;
   const nextStepRule = isSingleCallFlavor(flavor)
     ? "Reply with exactly one CALL block inside one tool envelope, or one final envelope. Do not batch multiple tool calls in one reply."
-    : "If more than one independent tool call is needed, include multiple CALL blocks. Otherwise call the next tool immediately or give the final answer envelope.";
+    : `If more than one independent tool call is needed, include multiple CALL blocks (up to ${MAX_PARALLEL_TOOL_CALLS} maximum). Do not exceed ${MAX_PARALLEL_TOOL_CALLS} CALL blocks in one reply.`;
   const payload = {
     tool_call_id: message.tool_call_id || "",
     content: contentPartsToText(message.content)
@@ -593,10 +594,7 @@ function buildBridgeSystemMessage(tools, flavor = "default") {
     : { name: "read", arguments: { filePath: "src/styles.css" } };
   const callCountRule = isSingleCallFlavor(flavor)
     ? "- Emit exactly one CALL block per tool reply."
-    : "- Emit one or more tool calls only when they are independent and can be executed in parallel or as a batch.";
-  const batchRule = isSingleCallFlavor(flavor)
-    ? "- Do not batch multiple tool calls in one reply. After the tool result returns, send the next tool call."
-    : "- If several reads/searches are needed immediately, include multiple CALL blocks in the same tool envelope.";
+    : `- You may batch up to ${MAX_PARALLEL_TOOL_CALLS} independent tool calls per reply. Never emit more than ${MAX_PARALLEL_TOOL_CALLS} CALL blocks. If you need more than ${MAX_PARALLEL_TOOL_CALLS}, do the first ${MAX_PARALLEL_TOOL_CALLS} now and continue after results arrive.`;
   return [
     "Tool bridge mode is enabled.",
     "The upstream provider's native tool calling is disabled for this request.",
@@ -626,7 +624,6 @@ function buildBridgeSystemMessage(tools, flavor = "default") {
       ? "- For Kimi, each CALL JSON object must use tool_name and tool_input. Do not use name/arguments."
       : "- Each CALL JSON object must use name and arguments. Do not use tool_name/tool_input.",
     callCountRule,
-    batchRule,
     isSingleCallFlavor(flavor)
       ? `- Do not emit ${CALL_MODE_MARKER} without first emitting ${TOOL_MODE_MARKER}.`
       : null,
@@ -1261,6 +1258,13 @@ function extractCallEnvelopes(text, allowPartial = false) {
     const afterStart = source.slice(afterStartIndex);
     const end = findMarkerEnd(afterStart, CALL_MODE_END_MARKER_ALIASES, LOOSE_CALL_END_REGEX);
     if (!end) {
+      // No explicit end marker — check if another [[CALL]] follows (implicit close)
+      const nextCall = findMarkerStart(afterStart, CALL_MODE_MARKER_ALIASES, LOOSE_CALL_START_REGEX);
+      if (nextCall && nextCall.index > 0) {
+        out.push(afterStart.slice(0, nextCall.index).trim());
+        cursor = afterStartIndex + nextCall.index;
+        continue;
+      }
       if (allowPartial) out.push(afterStart.trim());
       break;
     }
@@ -1896,7 +1900,14 @@ async function proxyRequest(req, res) {
           applyChunkToAggregate(aggregate, parsed.value);
           flushReasoningDelta(aggregate);
           flushProgressiveToolCalls(aggregate);
+
+          if (emittedToolCalls >= MAX_PARALLEL_TOOL_CALLS) {
+            aggregate.finishReason = "tool_calls_max_cap";
+            try { response.body.destroy(); } catch (e) { }
+            break;
+          }
         }
+        if (emittedToolCalls >= MAX_PARALLEL_TOOL_CALLS) break;
       }
       appendActivity(`request.stream_consumed id=${requestId} label=${logLabel} finish=${aggregate.finishReason || "null"} reasoning_len=${aggregate.reasoning.length} content_len=${aggregate.content.length}`);
     };
