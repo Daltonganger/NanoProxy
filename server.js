@@ -517,7 +517,7 @@ function encodeToolResultBlock(message, flavor = "default") {
     : `{"name":"read","arguments":{"filePath":"src/app.js"}}`;
   const nextStepRule = isSingleCallFlavor(flavor)
     ? "Reply with exactly one CALL block inside one tool envelope, or one final envelope. Do not batch multiple tool calls in one reply."
-    : "IMPORTANT: If you need to read, search, or inspect multiple files, ALWAYS batch all of them as multiple CALL blocks in a single tool envelope. Do NOT read one file at a time when you could read several at once.";
+    : "If more than one independent tool call is needed, include multiple CALL blocks. Otherwise call the next tool immediately or give the final answer envelope.";
   const payload = {
     tool_call_id: message.tool_call_id || "",
     content: contentPartsToText(message.content)
@@ -555,7 +555,7 @@ function encodeUserMessageForBridge(content, options = {}) {
     : `{"name":"read","arguments":{"filePath":"src/app.js"}}`;
   const callCountRule = isSingleCallFlavor(flavor)
     ? `- Use exactly one ${CALL_MODE_MARKER} block per reply.`
-    : `- ALWAYS batch independent operations: include multiple ${CALL_MODE_MARKER} blocks in the same tool envelope. Do NOT make one call per turn when several are needed.`;
+    : `- If several independent operations are immediately needed, you may include multiple ${CALL_MODE_MARKER} blocks in the same tool envelope.`;
   return [
     text,
     "",
@@ -593,10 +593,10 @@ function buildBridgeSystemMessage(tools, flavor = "default") {
     : { name: "read", arguments: { filePath: "src/styles.css" } };
   const callCountRule = isSingleCallFlavor(flavor)
     ? "- Emit exactly one CALL block per tool reply."
-    : "- ALWAYS batch independent tool calls in one reply. If you need to read, search, or inspect multiple files, include ALL of them as separate CALL blocks in a single tool envelope. One-call-per-turn is WRONG when multiple independent calls are possible.";
+    : "- Emit one or more tool calls only when they are independent and can be executed in parallel or as a batch.";
   const batchRule = isSingleCallFlavor(flavor)
     ? "- Do not batch multiple tool calls in one reply. After the tool result returns, send the next tool call."
-    : "- For example, if you need to read 3 files, emit 3 CALL blocks in one tool envelope, not 3 separate turns. Batching saves time and is always preferred.";
+    : "- If several reads/searches are needed immediately, include multiple CALL blocks in the same tool envelope.";
   return [
     "Tool bridge mode is enabled.",
     "The upstream provider's native tool calling is disabled for this request.",
@@ -692,28 +692,6 @@ function translateMessagesForBridge(messages, tools, modelId) {
 
     if (!bridgeInserted) {
       out.push(bridgeSystem);
-      if (!isSingleCallFlavor(flavor)) {
-        out.push({
-          role: "assistant",
-          content: [
-            TOOL_MODE_MARKER,
-            CALL_MODE_MARKER,
-            JSON.stringify({ name: "read", arguments: { filePath: "src/index.js" } }, null, 2),
-            CALL_MODE_END_MARKER,
-            CALL_MODE_MARKER,
-            JSON.stringify({ name: "read", arguments: { filePath: "src/utils.js" } }, null, 2),
-            CALL_MODE_END_MARKER,
-            CALL_MODE_MARKER,
-            JSON.stringify({ name: "read", arguments: { filePath: "src/config.js" } }, null, 2),
-            CALL_MODE_END_MARKER,
-            TOOL_MODE_END_MARKER
-          ].join("\n")
-        });
-        out.push({
-          role: "user",
-          content: "(3 tool results received. This was a demonstration of correct parallel batching. The real conversation follows.)"
-        });
-      }
       bridgeInserted = true;
     }
 
