@@ -4,31 +4,15 @@
   "version": "1.1.0",
   "description": "Local OpenAI-compatible proxy and OpenCode plugin that bridges tool calls for NanoGPT when native tool calling is unreliable.",
   "type": "commonjs",
-  "main": "src/plugin.mjs",
+  "main": "./src/plugin.mjs",
   "exports": {
-    ".": "./server.js",
-    "./plugin": "./src/plugin.mjs",
+    ".": "./src/plugin.mjs",
+    "./server": "./server.js",
     "./core": "./src/core.js"
   },
-  "types": "./dist/plugin.d.ts",
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js && node selftest.js",
-    "build": "tsc src/plugin.ts --declaration --emitDeclarationOnly --declarationDir dist --moduleResolution node --target ES2022 --module ESNext --esModuleInterop",
-    "typecheck": "tsc --noEmit src/plugin.ts"
-  },
-  "peerDependencies": {
-    "@opencode-ai/plugin": ">=1.1.0",
-    "zod": ">=3.0.0"
-  },
-  "peerDependenciesMeta": {
-    "@opencode-ai/plugin": {
-      "optional": true
-    }
-  },
-  "devDependencies": {
-    "@types/node": "^20.0.0",
-    "typescript": "^5.0.0"
+    "check": "node --check server.js && node selftest.js"
   },
   "keywords": [
     "opencode",

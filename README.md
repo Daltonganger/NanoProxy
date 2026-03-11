@@ -11,25 +11,9 @@ Local OpenAI-compatible proxy and OpenCode plugin for NanoGPT when native tool c
 
 So the client still sees standard tool calls, but NanoGPT does not have to rely on its native tool-calling behavior.
 
-## Two Usage Modes
+## Usage Modes
 
-### 1. OpenCode Plugin Mode (recommended)
-
-The plugin patches `globalThis.fetch` inside the OpenCode process, intercepting NanoGPT API calls transparently. No separate server process or config changes needed.
-
-Add NanoProxy to your OpenCode configuration (`~/.config/opencode/opencode.json`):
-
-```json
-{
-  "plugin": [
-    "file:///path/to/NanoProxy/src/plugin.mjs"
-  ]
-}
-```
-
-That's it. The plugin automatically detects requests to `nano-gpt.com`, applies the bridge transformation, and converts responses back to native `tool_calls` before the AI SDK ever sees them.
-
-### 2. Standalone Server Mode
+### 1. Standalone Server Mode (recommended)
 
 Run as a local HTTP proxy that sits between your client and NanoGPT.
 
@@ -49,6 +33,26 @@ PROXY_HOST=127.0.0.1
 PROXY_PORT=8787
 node server.js
 ```
+
+### 2. OpenCode Plugin Mode (experimental)
+
+> **Warning**: This mode is experimental. The standalone server mode is more battle-tested and recommended for production use.
+
+The plugin patches `globalThis.fetch` inside the OpenCode process, intercepting NanoGPT API calls transparently. No separate server process needed.
+
+Add NanoProxy to your OpenCode configuration (`~/.config/opencode/opencode.json`):
+
+```json
+{
+  "plugin": [
+    "file:///path/to/NanoProxy/src/plugin.mjs"
+  ]
+}
+```
+
+The plugin automatically detects requests to `nano-gpt.com`, applies the bridge transformation, and converts responses back to native `tool_calls` before the AI SDK ever sees them.
+
+Streaming is handled progressively: reasoning content streams live, and tool calls are emitted as individual deltas when complete envelopes are detected.
 
 ## Docker
 
@@ -101,7 +105,7 @@ Logs are written to `Logs/` and include `activity.log`, per-request `*-request.j
 NANOPROXY_DEBUG=1 opencode
 ```
 
-Events are appended to `/tmp/nanoproxy-debug.log` as JSON objects separated by `---`.
+Events are appended to `/tmp/nanoproxy-plugin.log` as newline-delimited JSON. Override the path with `NANOPROXY_LOG=/path/to/file`.
 
 #### Health Check
 
