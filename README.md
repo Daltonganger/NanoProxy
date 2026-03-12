@@ -20,24 +20,6 @@ Use this if:
 - your client supports an OpenAI-compatible base URL
 - you prefer a separate local proxy process
 
-## Quick Start
-
-### OpenCode users: Plugin mode (recommended)
-
-- Add the plugin entry shown in [OpenCode Plugin Setup](#opencode-plugin-setup)
-- Restart OpenCode
-- Keep using the normal built-in NanoGPT provider
-
-You do not need to run `server.js` for plugin mode.
-
-### Other tools: Standalone server mode
-
-- Start the proxy with `node server.js`
-- Point your client to `http://127.0.0.1:8787`
-- Use your normal NanoGPT API key in that client
-
-Full details are in [Standalone Server Setup](#standalone-server-setup).
-
 ## OpenCode Plugin Setup
 
 The plugin intercepts NanoGPT API requests inside OpenCode and applies the NanoProxy bridge automatically.
@@ -71,19 +53,23 @@ Optional:
 
 ## Standalone Server Setup
 
-Run the standalone proxy:
+Run the server:
 
 ```sh
 node server.js
 ```
 
-Default address:
+Then point your coding tool to:
 
 ```text
 http://127.0.0.1:8787
 ```
 
-Optional environment variables:
+Keep using your normal NanoGPT API key in that tool.
+
+If your tool supports a custom OpenAI-compatible provider or `baseURL`, use `http://127.0.0.1:8787` there.
+
+Optional overrides:
 
 ```sh
 UPSTREAM_BASE_URL=https://nano-gpt.com/api/v1
