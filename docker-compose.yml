@@ -5,6 +5,10 @@ services:
       - "8787:8787"
     environment:
       UPSTREAM_BASE_URL: https://nano-gpt.com/api/v1
+      DIRECT_UPSTREAM_BASE_URL: https://nano-gpt.com/api/v1
       PROXY_HOST: 0.0.0.0
       PROXY_PORT: 8787
+      INTERNAL_PROXY_HOST: 127.0.0.1
+      INTERNAL_PROXY_PORT: 8788
+      REQUEST_TIMEOUT_MS: 30000
     restart: unless-stopped
