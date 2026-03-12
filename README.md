@@ -197,7 +197,7 @@ Your answer here.
 - Requests without tools are forwarded unchanged.
 - Reasoning streams live.
 - Tool and final content are buffered until NanoProxy can classify them safely.
-- Up to 5 parallel tool calls per turn are supported for models that behave well with batching.
+- By default, NanoProxy allows up to 5 tool calls in a single assistant turn for models that behave well with batching.
 - Some models may still behave better with one tool call per turn.
 
 ## Troubleshooting

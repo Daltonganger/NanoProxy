@@ -28,7 +28,7 @@ const {
   tryParseJson,
   tryParseJsonLenient,
   clone,
-  MAX_PARALLEL_TOOL_CALLS
+  MAX_TOOL_CALLS_PER_TURN
 } = core;
 
 const LISTEN_HOST = process.env.PROXY_HOST || "127.0.0.1";
@@ -288,13 +288,13 @@ async function proxyRequest(req, res) {
           flushReasoningDelta(aggregate);
           flushProgressiveToolCalls(aggregate);
 
-          if (emittedToolCalls >= MAX_PARALLEL_TOOL_CALLS) {
+          if (emittedToolCalls >= MAX_TOOL_CALLS_PER_TURN) {
             aggregate.finishReason = "tool_calls_max_cap";
             try { response.body.destroy(); } catch (e) { }
             break;
           }
         }
-        if (emittedToolCalls >= MAX_PARALLEL_TOOL_CALLS) break;
+        if (emittedToolCalls >= MAX_TOOL_CALLS_PER_TURN) break;
       }
       appendActivity(`request.stream_consumed id=${requestId} label=${logLabel} finish=${aggregate.finishReason || "null"} reasoning_len=${aggregate.reasoning.length} content_len=${aggregate.content.length}`);
     };
