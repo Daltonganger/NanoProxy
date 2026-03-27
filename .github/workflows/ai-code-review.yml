@@ -1,0 +1,29 @@
+name: AI Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run AI Code Review
+        uses: Daltonganger/AI-Code-Review@v1.4.4
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AI_PROVIDER: 'codex'
+          CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
+          CODEX_API_MODEL: 'gpt-5.4'
+          CODEX_API_BASE_URL: 'https://codex.2631.eu/v1'
+          REVIEW_LANGUAGE: 'en'
